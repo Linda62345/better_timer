@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <title>計時器</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+      background: #0d0d1a;
+      color: #fff;
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      user-select: none;
+      -webkit-user-select: none;
+      overflow: hidden;
+    }
+
+    /* ── title ── */
+    .title {
+      font-size: 0.8rem;
+      font-weight: 400;
+      letter-spacing: 5px;
+      color: rgba(255,255,255,0.25);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    /* ── time display ── */
+    .time-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .clock {
+      font-size: clamp(7rem, min(28vw, 30vh), 20rem);
+      font-weight: 100;
+      letter-spacing: -4px;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      transition: color 0.4s ease;
+      color: #fff;
+    }
+
+    .clock.warn   { color: #ffd32a; }
+    .clock.danger { color: #ff4757; }
+    .clock.done   { color: #7bed9f; }
+
+    .sec-label {
+      font-size: 0.85rem;
+      letter-spacing: 2px;
+      color: rgba(255,255,255,0.22);
+      font-variant-numeric: tabular-nums;
+      margin-top: 8px;
+    }
+
+    /* ── config summary ── */
+    .config-summary {
+      font-size: 0.72rem;
+      letter-spacing: 1.5px;
+      color: rgba(255,255,255,0.22);
+      margin-bottom: 14px;
+    }
+
+    /* ── bell flash ── */
+    .bell-msg {
+      height: 36px;
+      font-size: 0.95rem;
+      letter-spacing: 1px;
+      color: #ffd32a;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.25s, transform 0.25s;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .bell-msg.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── buttons ── */
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      height: 56px;
+      min-width: 120px;
+      padding: 0 24px;
+      border: none;
+      border-radius: 28px;
+      font-size: 1rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+      letter-spacing: 0.5px;
+    }
+
+    .btn:active { transform: scale(0.92); }
+
+    .btn-main {
+      background: linear-gradient(135deg, #7c6ee0, #a29bfe);
+      color: #fff;
+      min-width: 140px;
+    }
+
+    .btn-main.pausing {
+      background: linear-gradient(135deg, #f79f1f, #feca57);
+      color: #1a1a2e;
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.07);
+      color: rgba(255,255,255,0.6);
+      border: 1.5px solid rgba(255,255,255,0.11);
+    }
+
+    /* ── settings trigger ── */
+    .settings-row {
+      margin-top: 14px;
+    }
+
+    .btn-settings {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.28);
+      font-size: 0.8rem;
+      font-family: inherit;
+      letter-spacing: 2px;
+      cursor: pointer;
+      padding: 8px 16px;
+      border-radius: 20px;
+      transition: color 0.2s, background 0.2s;
+    }
+
+    .btn-settings:active {
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* ── status ── */
+    .status {
+      margin-top: 14px;
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.28);
+      letter-spacing: 2px;
+      height: 18px;
+      text-align: center;
+    }
+
+    /* ── wake badge ── */
+    .wake-badge {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      font-size: 0.6rem;
+      letter-spacing: 1px;
+      color: rgba(255,255,255,0.15);
+      transition: color 0.3s;
+    }
+
+    .wake-badge.on { color: rgba(123,237,159,0.5); }
+
+    /* ════════════════════════════════
+       Settings overlay / panel
+    ════════════════════════════════ */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+    }
+
+    .overlay.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .panel {
+      background: #181828;
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 24px 24px 0 0;
+      width: 100%;
+      max-width: 480px;
+      padding: 28px 24px 44px;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    .overlay.open .panel {
+      transform: translateY(0);
+    }
+
+    .panel-title {
+      font-size: 0.8rem;
+      letter-spacing: 4px;
+      color: rgba(255,255,255,0.3);
+      text-transform: uppercase;
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .setting-row label {
+      font-size: 1rem;
+      color: rgba(255,255,255,0.65);
+    }
+
+    /* stepper: − [input] 分鐘 + */
+    .stepper {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .step-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.7);
+      font-size: 1.3rem;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.1s, background 0.15s;
+      font-family: inherit;
+    }
+
+    .step-btn:active {
+      transform: scale(0.85);
+      background: rgba(255,255,255,0.14);
+    }
+
+    .num-input {
+      width: 64px;
+      height: 48px;
+      background: rgba(255,255,255,0.07);
+      border: 1.5px solid rgba(255,255,255,0.13);
+      border-radius: 12px;
+      color: #fff;
+      font-size: 1.4rem;
+      font-weight: 300;
+      text-align: center;
+      font-family: inherit;
+      font-variant-numeric: tabular-nums;
+      outline: none;
+      -webkit-appearance: none;
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+
+    .num-input::-webkit-inner-spin-button,
+    .num-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+    .num-input:focus { border-color: #7c6ee0; }
+
+    .unit {
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.3);
+    }
+
+    .setting-note {
+      min-height: 22px;
+      font-size: 0.78rem;
+      color: #ff4757;
+      text-align: center;
+      margin: 14px 0 0;
+    }
+
+    .panel-btns {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .btn-cancel {
+      flex: 1;
+      background: rgba(255,255,255,0.05);
+      color: rgba(255,255,255,0.45);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .btn-confirm {
+      flex: 2;
+      background: linear-gradient(135deg, #7c6ee0, #a29bfe);
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+<div class="wake-badge" id="wakeBadge">SCREEN</div>
+
+<p class="title">倒數計時器</p>
+
+<div class="time-area">
+  <div class="clock" id="clock">8:00</div>
+  <div class="sec-label" id="secLabel">480 秒</div>
+</div>
+
+<p class="config-summary" id="configSummary">響鈴 6 分　結束 8 分</p>
+
+<div class="bell-msg" id="bellMsg">🔔</div>
+
+<div class="btn-row">
+  <button class="btn btn-main" id="mainBtn">開始</button>
+  <button class="btn btn-secondary" id="resetBtn">重設</button>
+</div>
+
+<div class="settings-row">
+  <button class="btn-settings" id="openSettings">⚙ 設定時間</button>
+</div>
+
+<p class="status" id="status">準備開始</p>
+
+<!-- ── Settings overlay ── -->
+<div class="overlay" id="overlay">
+  <div class="panel">
+    <p class="panel-title">設定時間</p>
+
+    <div class="setting-row">
+      <label>響鈴時間</label>
+      <div class="stepper">
+        <button class="step-btn" id="bellMinus">−</button>
+        <input class="num-input" type="number" id="inputBell" min="1" max="99" value="6" inputmode="numeric">
+        <span class="unit">分鐘</span>
+        <button class="step-btn" id="bellPlus">+</button>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <label>結束時間</label>
+      <div class="stepper">
+        <button class="step-btn" id="endMinus">−</button>
+        <input class="num-input" type="number" id="inputEnd" min="1" max="99" value="8" inputmode="numeric">
+        <span class="unit">分鐘</span>
+        <button class="step-btn" id="endPlus">+</button>
+      </div>
+    </div>
+
+    <p class="setting-note" id="settingNote"></p>
+
+    <div class="panel-btns">
+      <button class="btn btn-cancel" id="cancelBtn">取消</button>
+      <button class="btn btn-confirm" id="confirmBtn">確認</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── configurable state ──────────────────────────────────────────────
+  let bellMin = 6;
+  let endMin  = 8;
+
+  // derived
+  let TOTAL     = endMin  * 60;
+  let BELL_LEFT = (endMin - bellMin) * 60; // timeLeft when bell rings
+
+  let timeLeft = TOTAL;
+  let running  = false;
+  let tid      = null;
+  let rung     = new Set();
+  let wakeLock = null;
+  let audioCtx = null;
+
+  // ── DOM refs ────────────────────────────────────────────────────────
+  const clockEl     = document.getElementById('clock');
+  const secLabel    = document.getElementById('secLabel');
+  const bellMsg     = document.getElementById('bellMsg');
+  const mainBtn     = document.getElementById('mainBtn');
+  const resetBtn    = document.getElementById('resetBtn');
+  const statusEl    = document.getElementById('status');
+  const wakeBadge   = document.getElementById('wakeBadge');
+  const configSumEl = document.getElementById('configSummary');
+  const overlay     = document.getElementById('overlay');
+  const inputBell   = document.getElementById('inputBell');
+  const inputEnd    = document.getElementById('inputEnd');
+  const settingNote = document.getElementById('settingNote');
+
+  // ── render ──────────────────────────────────────────────────────────
+  function fmt(s) {
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  function updateConfigSummary() {
+    configSumEl.textContent = `響鈴 ${bellMin} 分　結束 ${endMin} 分`;
+  }
+
+  function render() {
+    clockEl.textContent = fmt(timeLeft);
+    secLabel.textContent = `${timeLeft} 秒`;
+
+    clockEl.className = 'clock';
+    if (timeLeft === 0) {
+      clockEl.classList.add('done');
+    } else if (timeLeft <= 60) {
+      clockEl.classList.add('danger');
+    } else if (BELL_LEFT > 0 && timeLeft <= BELL_LEFT) {
+      clockEl.classList.add('warn');
+    }
+  }
+
+  // ── audio ────────────────────────────────────────────────────────────
+  function audio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+
+  function ringBell() {
+    const ctx = audio();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    // Compressor: maximise perceived loudness without clipping
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -6;
+    comp.ratio.value     = 6;
+    comp.attack.value    = 0.001;
+    comp.release.value   = 0.05;
+    comp.connect(ctx.destination);
+
+    const t0 = ctx.currentTime;
+
+    // "Ding-dong" chime: E6 (1318 Hz) → C6 (1047 Hz), 200 ms apart
+    // Each note = sine (body) + triangle (brightness) + upper harmonic
+    function note(t, freq, vol, dur) {
+      [
+        [freq,     'triangle', vol * 0.55],
+        [freq,     'sine',     vol * 0.70],
+        [freq * 2, 'sine',     vol * 0.30],
+        [freq / 2, 'sine',     vol * 0.20],
+      ].forEach(([f, type, g]) => {
+        const osc = ctx.createOscillator();
+        const env = ctx.createGain();
+        osc.connect(env);
+        env.connect(comp);
+        osc.type = type;
+        osc.frequency.setValueAtTime(f, t);
+        env.gain.setValueAtTime(0, t);
+        env.gain.linearRampToValueAtTime(g, t + 0.004);
+        env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        osc.start(t);
+        osc.stop(t + dur);
+      });
+    }
+
+    note(t0,        1318.5, 1.0, 2.2); // E6 — first chime
+    note(t0 + 0.22, 1046.5, 1.0, 2.8); // C6 — second chime
+  }
+
+  function flashBell(text) {
+    bellMsg.textContent = text;
+    bellMsg.classList.add('show');
+    clearTimeout(flashBell._tid);
+    flashBell._tid = setTimeout(() => bellMsg.classList.remove('show'), 3500);
+  }
+
+  function checkBell() {
+    // intermediate bell
+    if (BELL_LEFT > 0 && timeLeft === BELL_LEFT && !rung.has('mid')) {
+      rung.add('mid');
+      ringBell();
+      const remaining = endMin - bellMin;
+      flashBell(`🔔  還剩 ${remaining} 分鐘`);
+    }
+    // end bell
+    if (timeLeft === 0 && !rung.has('end')) {
+      rung.add('end');
+      ringBell();
+      flashBell('🔔  時間到！');
+    }
+  }
+
+  // ── wake lock ────────────────────────────────────────────────────────
+  async function acquireWake() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeBadge.textContent = '螢幕常亮';
+      wakeBadge.classList.add('on');
+      wakeLock.addEventListener('release', () => {
+        wakeBadge.textContent = 'SCREEN';
+        wakeBadge.classList.remove('on');
+      });
+    } catch (_) {}
+  }
+
+  function releaseWake() { wakeLock?.release(); wakeLock = null; }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && running) acquireWake();
+  });
+
+  // ── controls ─────────────────────────────────────────────────────────
+  function start() {
+    if (running || timeLeft === 0) return;
+    running = true;
+    mainBtn.textContent = '暫停';
+    mainBtn.classList.add('pausing');
+    statusEl.textContent = '計時中...';
+    acquireWake();
+
+    tid = setInterval(() => {
+      timeLeft = Math.max(0, timeLeft - 1);
+      render();
+      checkBell();
+
+      if (timeLeft === 0) {
+        clearInterval(tid);
+        running = false;
+        mainBtn.textContent = '開始';
+        mainBtn.classList.remove('pausing');
+        statusEl.textContent = '時間到！';
+        releaseWake();
+      }
+    }, 1000);
+  }
+
+  function pause() {
+    if (!running) return;
+    clearInterval(tid);
+    running = false;
+    mainBtn.textContent = '繼續';
+    mainBtn.classList.remove('pausing');
+    statusEl.textContent = '已暫停';
+    releaseWake();
+  }
+
+  function reset() {
+    clearInterval(tid);
+    running = false;
+    timeLeft = TOTAL;
+    rung.clear();
+    render();
+    mainBtn.textContent = '開始';
+    mainBtn.classList.remove('pausing');
+    statusEl.textContent = '準備開始';
+    bellMsg.classList.remove('show');
+    releaseWake();
+  }
+
+  mainBtn.addEventListener('click', () => running ? pause() : start());
+  resetBtn.addEventListener('click', reset);
+
+  // ── settings panel ───────────────────────────────────────────────────
+  function openPanel() {
+    inputBell.value = bellMin;
+    inputEnd.value  = endMin;
+    settingNote.textContent = '';
+    overlay.classList.add('open');
+  }
+
+  function closePanel() {
+    overlay.classList.remove('open');
+  }
+
+  document.getElementById('openSettings').addEventListener('click', openPanel);
+  document.getElementById('cancelBtn').addEventListener('click', closePanel);
+
+  // tap outside panel to close
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) closePanel();
+  });
+
+  // +/- steppers
+  function stepper(inputEl, delta) {
+    const v = parseInt(inputEl.value) || 0;
+    const next = Math.max(1, Math.min(99, v + delta));
+    inputEl.value = next;
+  }
+
+  document.getElementById('bellMinus').addEventListener('click', () => stepper(inputBell, -1));
+  document.getElementById('bellPlus') .addEventListener('click', () => stepper(inputBell, +1));
+  document.getElementById('endMinus') .addEventListener('click', () => stepper(inputEnd,  -1));
+  document.getElementById('endPlus')  .addEventListener('click', () => stepper(inputEnd,  +1));
+
+  document.getElementById('confirmBtn').addEventListener('click', () => {
+    const b = parseInt(inputBell.value);
+    const e = parseInt(inputEnd.value);
+
+    if (!b || !e || b < 1 || e < 1) {
+      settingNote.textContent = '請輸入有效的分鐘數';
+      return;
+    }
+    if (b >= e) {
+      settingNote.textContent = '響鈴時間必須小於結束時間';
+      return;
+    }
+
+    bellMin   = b;
+    endMin    = e;
+    TOTAL     = endMin * 60;
+    BELL_LEFT = (endMin - bellMin) * 60;
+
+    updateConfigSummary();
+    closePanel();
+    reset();
+  });
+
+  // ── init ─────────────────────────────────────────────────────────────
+  updateConfigSummary();
+  render();
+</script>
+</body>
+</html>
