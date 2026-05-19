@@ -532,8 +532,23 @@
   });
 
   // ── controls ─────────────────────────────────────────────────────────
+  function unlockAudio() {
+    // iOS requires AudioContext to be created AND resumed inside a user gesture.
+    // Playing a silent 1-sample buffer fully unlocks the audio session.
+    const ctx = audio();
+    const resume = ctx.state === 'suspended' ? ctx.resume() : Promise.resolve();
+    resume.then(() => {
+      const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+    });
+  }
+
   function start() {
     if (running || timeLeft === 0) return;
+    unlockAudio();
     running = true;
     mainBtn.textContent = '暫停';
     mainBtn.classList.add('pausing');
