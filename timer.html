@@ -442,8 +442,20 @@
   }
 
   // ── audio ────────────────────────────────────────────────────────────
+  let globalComp = null;
+
   function audio() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // 將 Compressor 壓縮器設為全域單一實例，解決重複響鈴導致的記憶體洩漏與無聲問題
+      globalComp = audioCtx.createDynamicsCompressor();
+      globalComp.threshold.value = -6;
+      globalComp.ratio.value     = 6;
+      globalComp.attack.value    = 0.001;
+      globalComp.release.value   = 0.05;
+      globalComp.connect(audioCtx.destination);
+    }
     return audioCtx;
   }
 
@@ -451,14 +463,6 @@
     const ctx = audio();
 
     const playNotes = () => {
-      // Compressor: maximise perceived loudness without clipping
-      const comp = ctx.createDynamicsCompressor();
-      comp.threshold.value = -6;
-      comp.ratio.value     = 6;
-      comp.attack.value    = 0.001;
-      comp.release.value   = 0.05;
-      comp.connect(ctx.destination);
-
       const t0 = ctx.currentTime;
 
       // "Ding-dong" chime: E6 (1318 Hz) → C6 (1047 Hz), 200 ms apart
@@ -473,7 +477,7 @@
           const osc = ctx.createOscillator();
           const env = ctx.createGain();
           osc.connect(env);
-          env.connect(comp);
+          env.connect(globalComp); // 連接到全域壓縮器
           osc.type = type;
           osc.frequency.setValueAtTime(f, t);
           env.gain.setValueAtTime(0, t);
