@@ -449,43 +449,50 @@
 
   function ringBell() {
     const ctx = audio();
-    if (ctx.state === 'suspended') ctx.resume();
 
-    // Compressor: maximise perceived loudness without clipping
-    const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -6;
-    comp.ratio.value     = 6;
-    comp.attack.value    = 0.001;
-    comp.release.value   = 0.05;
-    comp.connect(ctx.destination);
+    const playNotes = () => {
+      // Compressor: maximise perceived loudness without clipping
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -6;
+      comp.ratio.value     = 6;
+      comp.attack.value    = 0.001;
+      comp.release.value   = 0.05;
+      comp.connect(ctx.destination);
 
-    const t0 = ctx.currentTime;
+      const t0 = ctx.currentTime;
 
-    // "Ding-dong" chime: E6 (1318 Hz) → C6 (1047 Hz), 200 ms apart
-    // Each note = sine (body) + triangle (brightness) + upper harmonic
-    function note(t, freq, vol, dur) {
-      [
-        [freq,     'triangle', vol * 0.55],
-        [freq,     'sine',     vol * 0.70],
-        [freq * 2, 'sine',     vol * 0.30],
-        [freq / 2, 'sine',     vol * 0.20],
-      ].forEach(([f, type, g]) => {
-        const osc = ctx.createOscillator();
-        const env = ctx.createGain();
-        osc.connect(env);
-        env.connect(comp);
-        osc.type = type;
-        osc.frequency.setValueAtTime(f, t);
-        env.gain.setValueAtTime(0, t);
-        env.gain.linearRampToValueAtTime(g, t + 0.004);
-        env.gain.exponentialRampToValueAtTime(0.001, t + dur);
-        osc.start(t);
-        osc.stop(t + dur);
-      });
+      // "Ding-dong" chime: E6 (1318 Hz) → C6 (1047 Hz), 200 ms apart
+      // Each note = sine (body) + triangle (brightness) + upper harmonic
+      function note(t, freq, vol, dur) {
+        [
+          [freq,     'triangle', vol * 0.55],
+          [freq,     'sine',     vol * 0.70],
+          [freq * 2, 'sine',     vol * 0.30],
+          [freq / 2, 'sine',     vol * 0.20],
+        ].forEach(([f, type, g]) => {
+          const osc = ctx.createOscillator();
+          const env = ctx.createGain();
+          osc.connect(env);
+          env.connect(comp);
+          osc.type = type;
+          osc.frequency.setValueAtTime(f, t);
+          env.gain.setValueAtTime(0, t);
+          env.gain.linearRampToValueAtTime(g, t + 0.004);
+          env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+          osc.start(t);
+          osc.stop(t + dur);
+        });
+      }
+
+      note(t0,        1318.5, 1.0, 2.2); // E6 — first chime
+      note(t0 + 0.22, 1046.5, 1.0, 2.8); // C6 — second chime
+    };
+
+    if (ctx.state !== 'running') {
+      ctx.resume().then(playNotes).catch(console.error);
+    } else {
+      playNotes();
     }
-
-    note(t0,        1318.5, 1.0, 2.2); // E6 — first chime
-    note(t0 + 0.22, 1046.5, 1.0, 2.8); // C6 — second chime
   }
 
   function flashBell(text) {
@@ -532,18 +539,23 @@
   });
 
   // ── controls ─────────────────────────────────────────────────────────
+  let silentOsc = null;
+
   function unlockAudio() {
     // iOS requires AudioContext to be created AND resumed inside a user gesture.
-    // Playing a silent 1-sample buffer fully unlocks the audio session.
+    // Playing a continuous silent sound prevents iOS Safari from automatically suspending the context.
     const ctx = audio();
-    const resume = ctx.state === 'suspended' ? ctx.resume() : Promise.resolve();
+    const resume = ctx.state !== 'running' ? ctx.resume() : Promise.resolve();
     resume.then(() => {
-      const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      src.connect(ctx.destination);
-      src.start(0);
-    });
+      if (!silentOsc) {
+        silentOsc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        gain.gain.value = 0; // zero volume (silent)
+        silentOsc.connect(gain);
+        gain.connect(ctx.destination);
+        silentOsc.start();
+      }
+    }).catch(console.error);
   }
 
   function start() {
